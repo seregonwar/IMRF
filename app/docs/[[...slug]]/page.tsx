@@ -1,5 +1,6 @@
 import { getDocBySlug, getDocSlugs } from '@/lib/markdown';
 import { TableOfContents } from '@/components/table-of-contents';
+import { EnhancedNavigation } from '@/components/navigation';
 import { components } from '@/components/mdx-components';
 import { MDXRemote } from 'next-mdx-remote/rsc';
 import { notFound } from 'next/navigation';
@@ -64,22 +65,27 @@ export default async function DocPage({
 
 
 
+    // Prepare content for navigation system
+    const navigationContent = doc.parsedContent ? [doc.parsedContent] : [];
+
     return (
-        <div className="flex">
-            <div className="flex-1 min-w-0">
-                <article className="prose dark:prose-invert max-w-none p-8">
-                    <header className="mb-8 border-b pb-4">
-                        <h1 className="text-4xl font-bold">{doc.frontmatter.title}</h1>
-                        {doc.frontmatter.description && (
-                            <p className="text-xl text-gray-500 mt-2">{doc.frontmatter.description}</p>
-                        )}
-                    </header>
-                    <div className="mdx-content">
-                        <MDXRemote source={doc.content} components={components} />
-                    </div>
-                </article>
-            </div>
-            <TableOfContents headings={doc.headings} />
-        </div>
+        <EnhancedNavigation 
+            content={navigationContent}
+            showBreadcrumbs={true}
+            showTOC={true}
+            showCrossReferences={true}
+        >
+            <article className="prose dark:prose-invert max-w-none p-8">
+                <header className="mb-8 border-b pb-4">
+                    <h1 className="text-4xl font-bold">{doc.frontmatter.title}</h1>
+                    {doc.frontmatter.description && (
+                        <p className="text-xl text-gray-500 mt-2">{doc.frontmatter.description}</p>
+                    )}
+                </header>
+                <div className="mdx-content">
+                    <MDXRemote source={doc.content} components={components} />
+                </div>
+            </article>
+        </EnhancedNavigation>
     );
 }

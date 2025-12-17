@@ -1,3 +1,12 @@
+---
+title: Project Roadmap
+description: Development phases and strategic planning for IMRF
+author: Seregonwar
+date: "2024-12-17"
+tags: [roadmap, planning, development, architecture]
+visibility: public
+---
+
 # Project Paper — Interactive Markdown Rendering Framework (IMRF)
 
 ## 1. Abstract
@@ -6,6 +15,8 @@ Questo documento descrive la progettazione e lo sviluppo di un framework per la 
 L’obiettivo principale è ridurre la frammentazione dei file Markdown, migliorare la navigabilità dei contenuti e offrire un’esperienza utente avanzata senza violare le limitazioni imposte dalle piattaforme di hosting dei repository (es. GitHub).
 
 Il framework separa chiaramente il **contenuto** dalla **presentazione**, utilizzando Markdown/MDX come sorgente e un renderer web esterno come destinazione.
+
+> **Quick Start**: New to IMRF? Begin with our [getting started guide](./getting-started.md) for immediate implementation steps.
 
 ---
 
@@ -78,10 +89,12 @@ Sviluppo del motore minimo in grado di:
 
 **Deliverables**
 
-* Markdown parser
+* Markdown parser (implemented in [lib/markdown.ts](../lib/markdown.ts))
 * Renderer HTML/SVG base
 * Routing per sezioni
 * Layout minimale
+
+> **Implementation Status**: Core parsing capabilities are now available. See the [API reference](./api.md) for detailed function documentation.
 
 | Metric             | Valore        |
 | ------------------ | ------------- |
@@ -154,6 +167,8 @@ Breaking change ahead
 | **V**  | 🔴 Molto Alta |
 
 👉 Questo è il vero fattore differenziante.
+
+> **Live Examples**: See custom components in action in our [interactive showcase](./features.md).
 
 ---
 
@@ -283,3 +298,12 @@ Il framework proposto non sostituisce il README GitHub, ma lo **evolve** in un p
 
 Non è un generatore di siti.
 È un **renderer di conoscenza**.
+
+---
+
+## Related Documentation
+
+- **[Framework Introduction](./index.md)** - Core concepts and philosophy
+- **[Getting Started Guide](./getting-started.md)** - Implementation tutorial
+- **[Interactive Components](./features.md)** - Live component examples
+- **[API Reference](./api.md)** - Complete technical documentation

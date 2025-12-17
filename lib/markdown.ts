@@ -1,6 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 import matter from 'gray-matter';
+import { unified } from 'unified';
+import remarkParse from 'remark-parse';
+import remarkGfm from 'remark-gfm';
+import remarkFrontmatter from 'remark-frontmatter';
+import remarkMdx from 'remark-mdx';
+import { visit } from 'unist-util-visit';
+import { toString } from 'mdast-util-to-string';
+import type { Root, Heading, Text, Link } from 'mdast';
 
 const DOCS_DIRECTORY = path.join(process.cwd(), 'docs');
 
@@ -8,17 +16,69 @@ export type DocParams = {
     slug: string[];
 };
 
+export type ContentSection = {
+    id: string;
+    title: string;
+    content: string;
+    level: number;
+    parent?: string;
+    children: string[];
+    metadata: SectionMetadata;
+};
+
+export type SectionMetadata = {
+    anchor: string;
+    wordCount: number;
+    estimatedReadTime: number;
+    tags?: string[];
+};
+
+export type CrossReference = {
+    source: string;
+    target: string;
+    type: 'internal' | 'external' | 'anchor';
+    text: string;
+    line?: number;
+};
+
+export type FrontMatterValidation = {
+    isValid: boolean;
+    errors: string[];
+    warnings: string[];
+};
+
+export type ParsedContent = {
+    ast: Root;
+    metadata: Record<string, any>;
+    sections: ContentSection[];
+    references: CrossReference[];
+    headings: { level: number; text: string; slug: string }[];
+};
+
+export type ContentCollection = {
+    files: Map<string, ParsedContent>;
+    crossReferences: CrossReference[];
+    globalMetadata: Record<string, any>;
+};
+
 export type DocContent = {
     slug: string;
     frontmatter: Record<string, any>;
     content: string;
     headings: { level: number; text: string; slug: string }[];
+    parsedContent?: ParsedContent;
 };
 
 export type SidebarItem = {
     title: string;
     slug?: string;
     children?: SidebarItem[];
+};
+
+export type ValidationResult = {
+    isValid: boolean;
+    errors: string[];
+    warnings: string[];
 };
 
 export function getSidebarStructure(): SidebarItem[] {
@@ -96,25 +156,24 @@ export function getDocBySlug(slug: string[]): DocContent {
     const fileContents = fs.readFileSync(fullPath, 'utf8');
     const { data, content } = matter(fileContents);
 
-    // Simple regex for headers (level 2 and 3)
-    const headings: { level: number; text: string; slug: string }[] = [];
-    const headingRegex = /^(#{2,3})\s+(.+)$/gm;
-    let match;
-    while ((match = headingRegex.exec(content)) !== null) {
-        const level = match[1].length;
-        const text = match[2];
-        const slug = text
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/(^-|-$)/g, '');
-        headings.push({ level, text, slug });
+    // Use new advanced parsing capabilities
+    const parsedContent = parseMarkdownContent(fileContents, fullPath);
+    
+    // Validate frontmatter
+    const validation = validateFrontmatter(data);
+    if (!validation.isValid) {
+        console.warn(`Frontmatter validation errors in ${realSlug}:`, validation.errors);
+    }
+    if (validation.warnings.length > 0) {
+        console.warn(`Frontmatter validation warnings in ${realSlug}:`, validation.warnings);
     }
 
     return {
         slug: realSlug,
         frontmatter: data,
         content,
-        headings,
+        headings: parsedContent.headings,
+        parsedContent
     };
 }
 
@@ -144,4 +203,315 @@ function findFile(slugPath: string): string | null {
     if (fs.existsSync(mdxPath)) return mdxPath;
 
     return null;
+}
+
+// Advanced parsing capabilities
+
+/**
+ * Creates a unified processor for parsing Markdown/MDX content
+ */
+function createMarkdownProcessor() {
+    return unified()
+        .use(remarkParse)
+        .use(remarkGfm)
+        .use(remarkFrontmatter, ['yaml', 'toml'])
+        .use(remarkMdx);
+}
+
+/**
+ * Parses markdown content and generates AST with extracted sections and references
+ */
+export function parseMarkdownContent(content: string, filePath?: string): ParsedContent {
+    const { data: metadata, content: markdownContent } = matter(content);
+    
+    const processor = createMarkdownProcessor();
+    const ast = processor.parse(markdownContent) as Root;
+    
+    const sections = extractContentSections(ast, filePath || '');
+    const references = extractCrossReferences(ast, filePath || '');
+    const headings = extractHeadings(ast);
+    
+    return {
+        ast,
+        metadata,
+        sections,
+        references,
+        headings
+    };
+}
+
+/**
+ * Extracts content sections from AST based on heading structure
+ */
+function extractContentSections(ast: Root, filePath: string): ContentSection[] {
+    const sections: ContentSection[] = [];
+    const headingStack: { level: number; section: ContentSection }[] = [];
+    let currentContent: any[] = [];
+    let sectionCounter = 0;
+
+    visit(ast, (node, index, parent) => {
+        if (node.type === 'heading') {
+            const heading = node as Heading;
+            
+            // Process previous section if exists
+            if (headingStack.length > 0 || currentContent.length > 0) {
+                const currentSection = headingStack[headingStack.length - 1]?.section;
+                if (currentSection) {
+                    currentSection.content = toString({ type: 'root', children: currentContent });
+                }
+            }
+            
+            // Create new section
+            const title = toString(heading);
+            const anchor = generateAnchor(title);
+            const level = heading.depth;
+            
+            const section: ContentSection = {
+                id: `section-${++sectionCounter}`,
+                title,
+                content: '',
+                level,
+                children: [],
+                metadata: {
+                    anchor,
+                    wordCount: 0,
+                    estimatedReadTime: 0,
+                    tags: []
+                }
+            };
+            
+            // Handle hierarchy
+            while (headingStack.length > 0 && headingStack[headingStack.length - 1].level >= level) {
+                headingStack.pop();
+            }
+            
+            if (headingStack.length > 0) {
+                const parent = headingStack[headingStack.length - 1].section;
+                section.parent = parent.id;
+                parent.children.push(section.id);
+            }
+            
+            headingStack.push({ level, section });
+            sections.push(section);
+            currentContent = [];
+        } else {
+            currentContent.push(node);
+        }
+    });
+    
+    // Process final section
+    if (headingStack.length > 0) {
+        const finalSection = headingStack[headingStack.length - 1].section;
+        finalSection.content = toString({ type: 'root', children: currentContent });
+    }
+    
+    // Calculate metadata for each section
+    sections.forEach(section => {
+        const wordCount = section.content.split(/\s+/).filter(word => word.length > 0).length;
+        section.metadata.wordCount = wordCount;
+        section.metadata.estimatedReadTime = Math.ceil(wordCount / 200); // 200 words per minute
+    });
+    
+    return sections;
+}
+
+/**
+ * Extracts cross-references (links) from the AST
+ */
+function extractCrossReferences(ast: Root, filePath: string): CrossReference[] {
+    const references: CrossReference[] = [];
+    
+    visit(ast, 'link', (node: Link) => {
+        const url = node.url;
+        const text = toString(node);
+        
+        let type: CrossReference['type'] = 'external';
+        if (url.startsWith('#')) {
+            type = 'anchor';
+        } else if (url.startsWith('/') || url.startsWith('./') || url.startsWith('../')) {
+            type = 'internal';
+        }
+        
+        references.push({
+            source: filePath,
+            target: url,
+            type,
+            text
+        });
+    });
+    
+    return references;
+}
+
+/**
+ * Extracts headings from AST for table of contents
+ */
+function extractHeadings(ast: Root): { level: number; text: string; slug: string }[] {
+    const headings: { level: number; text: string; slug: string }[] = [];
+    
+    visit(ast, 'heading', (node: Heading) => {
+        const text = toString(node);
+        const slug = generateAnchor(text);
+        
+        headings.push({
+            level: node.depth,
+            text,
+            slug
+        });
+    });
+    
+    return headings;
+}
+
+/**
+ * Generates URL-safe anchor from heading text
+ */
+function generateAnchor(text: string): string {
+    return text
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '');
+}
+
+/**
+ * Enhanced anchor generation with collision detection
+ */
+export function generateUniqueAnchor(text: string, existingAnchors: Set<string> = new Set()): string {
+    let baseAnchor = generateAnchor(text);
+    let anchor = baseAnchor;
+    let counter = 1;
+    
+    while (existingAnchors.has(anchor)) {
+        anchor = `${baseAnchor}-${counter}`;
+        counter++;
+    }
+    
+    existingAnchors.add(anchor);
+    return anchor;
+}
+
+/**
+ * Validates frontmatter metadata according to schema
+ */
+export function validateFrontmatter(metadata: Record<string, any>): FrontMatterValidation {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+    
+    // Required fields validation
+    if (!metadata.title || typeof metadata.title !== 'string') {
+        errors.push('Missing or invalid "title" field in frontmatter');
+    }
+    
+    // Optional field type validation
+    if (metadata.description && typeof metadata.description !== 'string') {
+        warnings.push('Description should be a string');
+    }
+    
+    if (metadata.author && typeof metadata.author !== 'string') {
+        warnings.push('Author should be a string');
+    }
+    
+    if (metadata.date && !isValidDate(metadata.date)) {
+        warnings.push('Date should be in valid ISO format (YYYY-MM-DD)');
+    }
+    
+    if (metadata.tags && !Array.isArray(metadata.tags)) {
+        warnings.push('Tags should be an array of strings');
+    } else if (metadata.tags && !metadata.tags.every((tag: any) => typeof tag === 'string')) {
+        warnings.push('All tags should be strings');
+    }
+    
+    if (metadata.visibility && !['public', 'private', 'draft'].includes(metadata.visibility)) {
+        warnings.push('Visibility should be one of: public, private, draft');
+    }
+    
+    return {
+        isValid: errors.length === 0,
+        errors,
+        warnings
+    };
+}
+
+/**
+ * Validates date string format
+ */
+function isValidDate(dateString: any): boolean {
+    if (typeof dateString !== 'string') return false;
+    const date = new Date(dateString);
+    return date instanceof Date && !isNaN(date.getTime());
+}
+
+/**
+ * Processes a directory of markdown files and creates a content collection
+ */
+export function parseDirectory(dirPath: string): ContentCollection {
+    const collection: ContentCollection = {
+        files: new Map(),
+        crossReferences: [],
+        globalMetadata: {}
+    };
+    
+    if (!fs.existsSync(dirPath)) {
+        return collection;
+    }
+    
+    const filePaths = getAllFiles(dirPath);
+    
+    filePaths.forEach(filePath => {
+        try {
+            const content = fs.readFileSync(filePath, 'utf8');
+            const relativePath = path.relative(dirPath, filePath);
+            const parsedContent = parseMarkdownContent(content, relativePath);
+            
+            collection.files.set(relativePath, parsedContent);
+            collection.crossReferences.push(...parsedContent.references);
+        } catch (error) {
+            console.warn(`Failed to parse file ${filePath}:`, error);
+        }
+    });
+    
+    // Process global metadata (could include site-wide configuration)
+    collection.globalMetadata = {
+        totalFiles: collection.files.size,
+        lastUpdated: new Date().toISOString(),
+        totalSections: Array.from(collection.files.values())
+            .reduce((total, parsed) => total + parsed.sections.length, 0)
+    };
+    
+    return collection;
+}
+
+/**
+ * Validates markdown syntax and structure
+ */
+export function validateMarkdownSyntax(content: string): ValidationResult {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+    
+    try {
+        const processor = createMarkdownProcessor();
+        const ast = processor.parse(content);
+        
+        // Check for common syntax issues
+        visit(ast, (node) => {
+            // Check for malformed links
+            if (node.type === 'link' && !(node as Link).url) {
+                errors.push('Found link without URL');
+            }
+            
+            // Check for empty headings
+            if (node.type === 'heading' && toString(node).trim() === '') {
+                warnings.push('Found empty heading');
+            }
+        });
+        
+    } catch (error) {
+        errors.push(`Syntax error: ${error instanceof Error ? error.message : 'Unknown parsing error'}`);
+    }
+    
+    return {
+        isValid: errors.length === 0,
+        errors,
+        warnings
+    };
 }
