@@ -24,8 +24,8 @@ export async function GET(request: Request) {
 
             const styles: Record<string, any> = {
                 info: { bg: '#eff6ff', border: '#bfdbfe', text: '#1e40af' }, // blue-50, blue-200, blue-800
-                warning: { bg: '#fefce8', border: '#fde047', text: '#854d0e' }, // yellow-50, yellow-200, yellow-800
-                error: { bg: '#fef2f2', border: '#fecaca', text: '#991b1b' }, // red-50, red-200, red-800
+                // warning: { bg: '#fefce8', border: '#fde047', text: '#854d0e' }, // yellow-50, yellow-200, yellow-800
+                // error: { bg: '#fef2f2', border: '#fecaca', text: '#991b1b' }, // red-50, red-200, red-800
                 success: { bg: '#f0fdf4', border: '#bcf0da', text: '#166534' }, // green-50, green-200, green-800
             };
 
@@ -33,23 +33,32 @@ export async function GET(request: Request) {
 
             return new ImageResponse(
                 (
-                    <div style={{ ...flexCenter, backgroundColor: 'white' }}>
+                    <div style={{
+                        display: 'flex',
+                        width: '100%',
+                        height: '100%',
+                        backgroundColor: 'transparent',
+                        alignItems: 'center',
+                        justifyContent: 'flex-start', // Align left like normal markdown
+                        padding: '0px',
+                    }}>
                         <div style={{
                             display: 'flex',
-                            padding: '24px',
+                            padding: '16px 20px',
                             width: '100%',
-                            borderRadius: '8px',
+                            borderRadius: '6px',
                             backgroundColor: style.bg,
-                            border: `2px solid ${style.border}`,
+                            border: `1px solid ${style.border}`,
                             color: style.text,
-                            fontSize: 24,
-                            fontFamily: 'sans-serif',
+                            fontSize: 16, // Match GitHub font size roughly
+                            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
+                            lineHeight: '1.5',
                         }}>
                             {text}
                         </div>
                     </div>
                 ),
-                { width: 800, height: 200 } // Smaller size for component strips
+                { width: 800, height: 80 } // Tight height
             );
         }
 
@@ -59,24 +68,30 @@ export async function GET(request: Request) {
 
             return new ImageResponse(
                 (
-                    <div style={{ ...flexCenter, backgroundColor: 'white' }}>
+                    <div style={{
+                        display: 'flex',
+                        width: '100%',
+                        height: '100%',
+                        backgroundColor: 'transparent',
+                        padding: '1px', // Prevent border clipping
+                    }}>
                         <div style={{
                             display: 'flex',
                             flexDirection: 'column',
-                            padding: '32px',
+                            padding: '24px',
                             width: '100%',
-                            borderRadius: '12px',
-                            backgroundColor: 'white',
-                            border: '2px solid #e5e7eb', // gray-200
-                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                            fontFamily: 'sans-serif',
+                            borderRadius: '6px',
+                            backgroundColor: '#ffffff',
+                            border: '1px solid #d0d7de',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
                         }}>
-                            <div style={{ fontSize: 24, fontWeight: 'bold', marginBottom: '12px', color: '#111' }}>{title}</div>
-                            <div style={{ fontSize: 20, color: '#374151' }}>{text}</div>
+                            <div style={{ fontSize: 18, fontWeight: 600, marginBottom: '8px', color: '#24292f' }}>{title}</div>
+                            <div style={{ fontSize: 14, color: '#57606a', lineHeight: '1.5' }}>{text}</div>
                         </div>
                     </div>
                 ),
-                { width: 800, height: 300 }
+                { width: 800, height: 160 }
             );
         }
 
