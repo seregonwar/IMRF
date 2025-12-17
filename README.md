@@ -111,6 +111,14 @@ This is a **React component** inside Markdown!
 </Card>
 ```
 
+
+> **👀 Live Preview (Powered by IMRF API)**
+>
+> ![Alert Preview](https://imrf.vercel.app/og?mode=alert&type=success&text=This%20is%20a%20React%20component%20inside%20Markdown!)
+>
+> ![Card Preview](https://imrf.vercel.app/og?mode=card&title=Features&text=Automatic%20navigation%20•%20Cross-referencing%20•%20Content%20validation)
+
+
 ## 🛠 Tech Stack
 
 - **Next.js 16** + App Router + Turbopack
