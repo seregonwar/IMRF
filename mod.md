@@ -1,197 +1,174 @@
+Questa è un'idea spettacolare! 🔥
 
-L'obiettivo è creare un **"Trend Badge"**: non solo un numero statico, ma un badge che mostra l'andamento dei download nell'ultimo mese con uno **sparkline (mini grafico)** integrato nello sfondo. È una feature che *Shields.io* standard non offre nativamente in questo modo.
+Il problema principale di GitHub (e dei Markdown in generale) è che **non eseguono JavaScript**. Quindi non puoi scrivere `<FaReact />` nel README.
 
-Ecco l'architettura della modifica.
+Ma, esattamente come abbiamo fatto per i badge, possiamo creare un **"React Icon Proxy"**.
+L'idea è semplice: **Tu chiedi l'icona via URL, il server renderizza il componente React e ti restituisce un SVG vettoriale puro.**
 
-### 1. La Logica (Il "Cervello")
+Ecco come implementare l'endpoint `/api/icon`.
 
-Dobbiamo fare tre cose nella funzione serverless:
+### 1. La scelta della Libreria (Performance vs Quantità)
 
-1. **Chiamare l'API NPM `range**` (non `point`) per ottenere i dati giorno per giorno.
-2. **Calcolare il path SVG** per disegnare la linea del grafico.
-3. **Calcolare il Trend** (i download stanno salendo o scendendo?) per colorare il badge dinamicamente (verde/rosso) se l'utente lo desidera.
+Importare l'intero pacchetto `react-icons` (che include FontAwesome, Material, ecc.) in una Serverless Function è pesante (sono vari MB).
+Per partire veloce e leggero, ti consiglio di usare **`lucide-react`** (che è lo standard moderno, usato da Vercel stessa e Shadcn/UI) perché permette di cercare le icone tramite stringa molto facilmente.
 
-### 2. Il Codice
+### 2. L'Endpoint API (`app/api/icon/route.tsx`)
 
-Crea (o aggiorna) il file `app/api/badge/downloads/route.ts`. Useremo TypeScript nativo per generare l'SVG senza librerie pesanti, così rimane velocissimo.
+Questo endpoint:
 
-#### A. Utility per il Grafico (puoi metterlo nello stesso file o in `lib/badge-utils.ts`)
-
-Questa funzione trasforma un array di numeri in comandi SVG (`M 0 10 L 5 2...`).
-
-```typescript
-// Genera il path SVG (Area Chart)
-function generateSparkline(data: number[], width: number, height: number) {
-  if (data.length < 2) return '';
-
-  const max = Math.max(...data);
-  const min = 0; // Partiamo da 0 per mostrare il volume reale
-  const range = max - min || 1;
-  const stepX = width / (data.length - 1);
-
-  // Costruiamo la linea superiore
-  const points = data.map((val, i) => {
-    const x = i * stepX;
-    // Invertiamo Y perché in SVG 0 è in alto
-    const y = height - ((val - min) / range) * height; 
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-
-  // Chiudiamo il path per creare l'area riempita (fill)
-  const pathData = `
-    M ${points[0]} 
-    L ${points.join(' L ')} 
-    L ${width},${height} 
-    L 0,${height} 
-    Z
-  `;
-  
-  return pathData;
-}
-
-// Stima larghezza testo (approssimazione font Verdana 11px)
-function getTextWidth(text: string) {
-  return text.length * 7 + 10; // 7px medio per carattere + padding
-}
-
-```
-
-#### B. La Route Handler Completa (`app/api/badge/downloads/route.ts`)
+1. Prende il nome dell'icona (es. `activity`, `github`, `server`).
+2. Prende parametri opzionali: `size`, `color`, `strokeWidth`.
+3. Usa `react-dom/server` per trasformare il componente React in stringa SVG.
 
 ```typescript
 import { NextRequest, NextResponse } from 'next/server';
+import { icons } from 'lucide-react';
+import { renderToStaticMarkup } from 'react-dom/server';
 
-export const runtime = 'edge'; // Massima velocità
+export const runtime = 'edge';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const pkg = searchParams.get('package');
-  // Opzioni: 'monthly' (default) mostra grafico 30gg. 
-  // 'weekly' mostra 7gg.
-  const period = searchParams.get('period') || 'monthly'; 
-  const color = searchParams.get('color') || '#0070f3'; // Blu Vercel default
-  const showTrend = searchParams.get('trend') === 'true'; // Se true, colora in base al trend
 
-  if (!pkg) {
-    return new NextResponse('<svg>Error</svg>', { status: 400 });
-  }
+  // 1. Parametri
+  // Nome icona (Case insensitive, es: 'Activity' o 'activity')
+  const iconNameParam = searchParams.get('name') || 'CircleHelp';
+  // Convertiamo in PascalCase per matchare Lucide (es. activity -> Activity)
+  const iconName = iconNameParam.charAt(0).toUpperCase() + iconNameParam.slice(1);
+  
+  const size = searchParams.get('size') || '24';
+  const color = searchParams.get('color') || '#000000'; // Accetta hex senza # o nomi
+  const stroke = searchParams.get('stroke') || '2';
+  const fill = searchParams.get('fill') === 'true'; // Opzionale: riempimento
 
-  try {
-    // 1. Fetch Dati NPM (Range)
-    // last-month ci dà i dati giornalieri
-    const endpoint = `https://api.npmjs.org/downloads/range/last-month/${pkg}`;
-    const res = await fetch(endpoint, { next: { revalidate: 3600 } });
-    
-    if (!res.ok) throw new Error('Package not found');
-    const data = await res.json();
-    
-    // Filtriamo i dati se richiesto 'weekly'
-    let downloads = data.downloads.map((d: any) => d.downloads);
-    if (period === 'weekly') {
-      downloads = downloads.slice(-7);
-    }
+  // Gestione Colore Hex (se l'utente passa 'ff0000' aggiungiamo '#')
+  const finalColor = color.match(/^[0-9a-fA-F]{3,6}$/) ? `#${color}` : color;
 
-    // 2. Calcoli Statistici
-    const totalDownloads = downloads.reduce((a: number, b: number) => a + b, 0);
-    
-    // Formattazione numero (es. 1.2M)
-    const formattedCount = new Intl.NumberFormat('en-US', {
-      notation: 'compact',
-      maximumFractionDigits: 1
-    }).format(totalDownloads);
+  // 2. Recupero Icona da Lucide
+  // Lucide esporta un oggetto 'icons' con tutte le icone
+  const IconComponent = (icons as any)[iconName];
 
-    // Calcolo Trend (Ultima metà vs Prima metà)
-    let trendColor = color;
-    if (showTrend) {
-      const mid = Math.floor(downloads.length / 2);
-      const firstHalf = downloads.slice(0, mid).reduce((a:number, b:number)=>a+b, 0);
-      const secondHalf = downloads.slice(mid).reduce((a:number, b:number)=>a+b, 0);
-      // Verde se sale, Rosso se scende, Grigio se stabile
-      trendColor = secondHalf >= firstHalf ? '#10b981' : '#ef4444'; 
-    }
-
-    // 3. Setup Dimensioni SVG
-    const label = 'downloads';
-    const labelWidth = getTextWidth(label);
-    const valueWidth = getTextWidth(formattedCount) + 10; // Spazio extra per il grafico
-    const totalWidth = labelWidth + valueWidth;
-    const height = 20;
-
-    // Genera la Sparkline (Area Chart)
-    // La disegniamo solo nella parte destra del badge
-    const sparklinePath = generateSparkline(downloads, valueWidth, height);
-
-    // 4. Costruzione SVG Manuale
-    // Usiamo una struttura a "badge piatto"
-    const svg = `
-      <svg width="${totalWidth}" height="${height}" viewBox="0 0 ${totalWidth} ${height}" xmlns="http://www.w3.org/2000/svg">
-        <linearGradient id="g" x2="0" y2="100%">
-          <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
-          <stop offset="1" stop-color="#000" stop-opacity=".1"/>
-        </linearGradient>
-        
-        <clipPath id="r">
-          <rect width="${totalWidth}" height="${height}" rx="3" fill="#fff"/>
-        </clipPath>
-
-        <g clip-path="url(#r)">
-          <rect width="${labelWidth}" height="${height}" fill="#555"/>
-          
-          <rect x="${labelWidth}" width="${valueWidth}" height="${height}" fill="${trendColor}"/>
-          
-          <g transform="translate(${labelWidth}, 0)">
-             <path d="${sparklinePath}" fill="#000" fill-opacity="0.2" stroke="none" />
-             </g>
-
-          <rect width="${totalWidth}" height="${height}" fill="url(#g)"/>
-        </g>
-
-        <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="11">
-          <text x="${labelWidth / 2}" y="15" fill="#010101" fill-opacity=".3">${label}</text>
-          <text x="${labelWidth / 2}" y="14">${label}</text>
-          
-          <text x="${labelWidth + valueWidth / 2}" y="15" fill="#010101" fill-opacity=".3">${formattedCount}</text>
-          <text x="${labelWidth + valueWidth / 2}" y="14">${formattedCount}</text>
-        </g>
-      </svg>
-    `;
-
-    return new NextResponse(svg, {
-      headers: {
-        'Content-Type': 'image/svg+xml',
-        'Cache-Control': 'public, max-age=3600, s-maxage=14400, stale-while-revalidate=3600',
-      },
+  if (!IconComponent) {
+    return new NextResponse('<svg>Icon not found</svg>', { 
+      status: 404, 
+      headers: { 'Content-Type': 'image/svg+xml' } 
     });
-
-  } catch (e) {
-    return new NextResponse('<svg width="100" height="20"><text y="15">Error</text></svg>', { status: 500 });
   }
+
+  // 3. Rendering React -> SVG String
+  // Usiamo renderToStaticMarkup che è velocissimo
+  const svgString = renderToStaticMarkup(
+    <IconComponent 
+      size={parseInt(size)} 
+      color={finalColor}
+      strokeWidth={parseFloat(stroke)}
+      fill={fill ? finalColor : 'none'} // Supporto riempimento solido
+    />
+  );
+
+  // 4. Risposta
+  return new NextResponse(svgString, {
+    headers: {
+      'Content-Type': 'image/svg+xml',
+      // Cache aggressiva (le icone non cambiano mai)
+      'Cache-Control': 'public, max-age=86400, s-maxage=31536000, immutable',
+    },
+  });
 }
 
 ```
 
-### 3. Come usarlo (Showcase)
+### 3. Come usarlo nel README.md
 
-Ecco come presentarlo nel tuo README aggiornato di IMRF. Copia questo markdown:
+Ora puoi scatenarti. Puoi inserire icone ovunque, anche in mezzo al testo o nelle tabelle.
+
+**Esempio Base:**
 
 ```markdown
-## 📈 Live Analytics
+# Tech Stack
 
-Monitor your project health with **IMRF Sparkline Badges**.
-These aren't static images; they visualize the last 30 days of data directly from the registry.
-
-| Badge Type | Preview | Code |
-| :--- | :--- | :--- |
-| **Standard** <br> *(Monthly)* | ![React Downloads](https://imrf.vercel.app/api/badge/downloads?package=react) | `?package=react` |
-| **Trend Aware** <br> *(Auto Green/Red)* | ![Trend](https://imrf.vercel.app/api/badge/downloads?package=jquery&trend=true) | `?package=jquery&trend=true` |
-| **Custom Color** <br> *(Brand Identity)* | ![Custom](https://imrf.vercel.app/api/badge/downloads?package=vue&color=8A2BE2) | `?package=vue&color=8A2BE2` |
-| **Weekly** <br> *(Short Term)* | ![Weekly](https://imrf.vercel.app/api/badge/downloads?package=next&period=weekly&color=black) | `?package=next&period=weekly` |
+![React](https://imrf.vercel.app/api/icon?name=react&color=61dafb&size=40)
+![TypeScript](https://imrf.vercel.app/api/icon?name=fileCode&color=3178c6&size=40)
+![Tailwind](https://imrf.vercel.app/api/icon?name=wind&color=38bdf8&size=40)
 
 ```
 
-### Perché questa soluzione è "Fighissima" (Technical Selling Points)
+**Esempio "Inline" (piccole icone nel testo):**
 
-1. **Sparkline Integrata:** La maggior parte dei badge generator (anche shields.io) usa servizi esterni o grafici separati per le sparkline. Qui l'hai "ingannata" disegnando il grafico come un livello semitrasparente (`fill-opacity="0.2"`) *sopra* il colore di sfondo del badge. Risultato: un effetto "texture" molto moderno e pulito.
-2. **Zero Dipendenze Pesanti:** Non stiamo usando `canvas` o librerie di chart enormi. È pura matematica vettoriale + stringhe. Veloce ed economico in termini di memoria serverless.
-3. **Trend Awareness:** L'opzione `trend=true` dà un valore semantico immediato. Se vedo un badge rosso, so che i download stanno calando senza dover leggere i numeri.
+```markdown
+### Features
+![Check](https://imrf.vercel.app/api/icon?name=check&color=green&size=16) **Fast rendering** ![Check](https://imrf.vercel.app/api/icon?name=check&color=green&size=16) **Serverless** ![X](https://imrf.vercel.app/api/icon?name=x&color=red&size=16) **No JavaScript required**
 
+```
+
+### 4. La "Feature Killer": Icon Buttons (Combinazione)
+
+Visto che ora hai un endpoint per le icone e uno per i badge, puoi fare una cosa ancora più figa: **Bottoni Visuali**.
+
+Possiamo creare un nuovo endpoint `/api/button` che usa `@vercel/og` per generare un'immagine che sembra un pulsante vero, con l'icona React renderizzata dentro!
+
+Ecco lo snippet rapido per `/api/button/route.tsx`:
+
+```typescript
+import { ImageResponse } from 'next/og';
+// Importa icone specifiche se vuoi evitare il bundle enorme, o usa una mappa
+import { Github, Twitter, Download } from 'lucide-react';
+
+export const runtime = 'edge';
+
+const iconMap: any = { github: Github, twitter: Twitter, download: Download };
+
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const text = searchParams.get('text') || 'Button';
+  const iconName = searchParams.get('icon'); // 'github'
+  const bg = searchParams.get('bg') || '000';
+  const color = searchParams.get('color') || 'fff';
+
+  const Icon = iconName ? iconMap[iconName.toLowerCase()] : null;
+
+  return new ImageResponse(
+    (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: `#${bg}`,
+          color: `#${color}`,
+          padding: '10px 20px',
+          borderRadius: '8px',
+          fontFamily: 'sans-serif',
+          fontSize: 18,
+          fontWeight: 600,
+          gap: '10px',
+          border: '1px solid rgba(255,255,255,0.2)'
+        }}
+      >
+        {Icon && <Icon size={24} />}
+        {text}
+      </div>
+    ),
+    { width: iconName ? text.length * 12 + 60 : text.length * 12 + 40, height: 50 }
+  );
+}
+
+```
+
+**Utilizzo nel README:**
+
+```markdown
+[![Deploy to Vercel](https://imrf.vercel.app/api/button?text=Deploy%20Now&icon=download&bg=000&color=fff)](https://vercel.com/new)
+
+```
+
+### Riassunto del tuo "Kit IMRF" attuale:
+
+| Endpoint | Funzione | Esempio URL |
+| --- | --- | --- |
+| **`/api/badge`** | Genera badge standard statici | `?label=v&message=1.0` |
+| **`/api/badge/downloads`** | Analytics in tempo reale + Grafici | `?package=react&trend=true` |
+| **`/api/icon`** | **Icone vettoriali pure (Novità)** | `?name=zap&color=gold` |
+| **`/og`** | Previews complesse (Componenti UI) | `?mode=alert` |
+
+Stai praticamente costruendo un **CMS visuale per GitHub**. Se metti insieme tutto questo in una bella landing page (`imrf.vercel.app`), diventerà uno strumento indispensabile per gli sviluppatori.
