@@ -119,7 +119,7 @@ This is a **React component** inside Markdown!
 > ![Card Preview](https://imrf.vercel.app/og?mode=card&title=Features&text=Automatic%20navigation%20•%20Cross-referencing%20•%20Content%20validation)
 
 
-## � Live Analytics
+## Live Analytics
 
 Monitor your project health with **IMRF Sparkline Badges**.
 These aren't static images; they visualize the last 30 days of data directly from the registry.
@@ -132,7 +132,7 @@ These aren't static images; they visualize the last 30 days of data directly fro
 | **Weekly** <br> *(Short Term)* | ![Weekly](https://imrf.vercel.app/api/badge/downloads?package=next&period=weekly&color=black) | `?package=next&period=weekly` |
 
 
-## �🛠 Tech Stack
+## 🛠 Tech Stack
 
 - **Next.js 16** + App Router + Turbopack
 - **Unified + Remark** for advanced parsing
