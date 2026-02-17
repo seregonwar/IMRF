@@ -18,7 +18,7 @@ export class ComponentParser {
     const selfClosingRegex = /<([A-Z][a-zA-Z0-9]*)\s*([^>]*?)\s*\/>/g;
     
     // Regex for block components: <ComponentName prop="value">content</ComponentName>
-    const blockRegex = /<([A-Z][a-zA-Z0-9]*)\s*([^>]*?)>(.*?)<\/\1>/gs;
+    const blockRegex = /<([A-Z][a-zA-Z0-9]*)\s*([^>]*?)>([\s\S]*?)<\/\1>/g;
     
     // Find self-closing components
     let match;

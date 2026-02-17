@@ -1,4 +1,4 @@
-import { ReactElement, ComponentType } from 'react';
+import { ReactElement, ComponentType, createElement } from 'react';
 import { ValidationResult } from './markdown';
 
 export type ComponentProps = Record<string, any>;
@@ -94,7 +94,7 @@ export class ComponentRegistry {
     const processedProps = this.processProps(component, props);
     
     try {
-      const element = component.component(processedProps);
+      const element = createElement(component.component, processedProps);
       
       return {
         element,
