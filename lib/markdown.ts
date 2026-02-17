@@ -9,6 +9,8 @@ import remarkMdx from 'remark-mdx';
 import { visit } from 'unist-util-visit';
 import { toString } from 'mdast-util-to-string';
 import type { Root, Heading, Text, Link } from 'mdast';
+import { globalComponentRenderer, ComponentRenderResult } from './component-renderer';
+import { ComponentDefinition } from './component-registry';
 
 const DOCS_DIRECTORY = path.join(process.cwd(), 'docs');
 
@@ -53,6 +55,8 @@ export type ParsedContent = {
     sections: ContentSection[];
     references: CrossReference[];
     headings: { level: number; text: string; slug: string }[];
+    components?: ComponentDefinition[];
+    componentRenderResult?: ComponentRenderResult;
 };
 
 export type ContentCollection = {
@@ -224,19 +228,26 @@ function createMarkdownProcessor() {
 export function parseMarkdownContent(content: string, filePath?: string): ParsedContent {
     const { data: metadata, content: markdownContent } = matter(content);
     
+    // Process custom components first
+    const componentRenderResult = globalComponentRenderer.renderComponents(markdownContent);
+    const processedContent = componentRenderResult.content;
+    
     const processor = createMarkdownProcessor();
-    const ast = processor.parse(markdownContent) as Root;
+    const ast = processor.parse(processedContent) as Root;
     
     const sections = extractContentSections(ast, filePath || '');
     const references = extractCrossReferences(ast, filePath || '');
     const headings = extractHeadings(ast);
+    const components = globalComponentRenderer.extractComponentDefinitions(markdownContent);
     
     return {
         ast,
         metadata,
         sections,
         references,
-        headings
+        headings,
+        components,
+        componentRenderResult
     };
 }
 
@@ -504,6 +515,11 @@ export function validateMarkdownSyntax(content: string): ValidationResult {
                 warnings.push('Found empty heading');
             }
         });
+        
+        // Validate custom components
+        const componentValidation = globalComponentRenderer.validateComponents(content);
+        errors.push(...componentValidation.errors);
+        warnings.push(...componentValidation.warnings);
         
     } catch (error) {
         errors.push(`Syntax error: ${error instanceof Error ? error.message : 'Unknown parsing error'}`);

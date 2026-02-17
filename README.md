@@ -5,12 +5,42 @@
 [![Status](https://imrf.vercel.app/api/badge?label=Status&status=Active&color=00ba55)](https://imrf.vercel.app/docs)
 [![Docs](https://imrf.vercel.app/api/badge?label=Docs&status=Live&color=0070f3)](https://imrf.vercel.app/docs)
 [![API](https://imrf.vercel.app/api/badge?label=API&status=Complete&color=purple)](https://imrf.vercel.app/docs/api)
+[![Downloads](https://imrf.vercel.app/api/badge?metric=release_downloads_total&label=Downloads&color=1f6feb&cacheSeconds=300)](https://github.com)
 
 **IMRF** transforms static Markdown into **interactive and navigable** web documentation. It keeps GitHub as the source of truth while enabling custom components, automatic navigation, and content validation.
 
 > *"It's not a site generator. It's a **knowledge renderer**."*
 
 ---
+
+## 🔢 Dynamic Release Downloads Badge
+
+IMRF exposes a simple SVG badge endpoint that can also show **GitHub Releases download counts** (computed from `assets[].download_count`), and updates automatically based on cache settings.
+
+### Metrics
+
+- `metric=release_downloads_total`: total downloads across all releases (paginated, bounded)
+- `metric=release_downloads_latest`: downloads for the latest release only
+
+### Parameters
+
+- `github=OWNER/REPO` (optional): repository to query. If omitted on Vercel, IMRF attempts to infer it from `VERCEL_GIT_REPO_OWNER` and `VERCEL_GIT_REPO_SLUG`.
+- `label` (optional): left-side badge label (default: `Downloads`)
+- `color` (optional): hex color (`0070f3`, `1f6feb`, `fff`, etc.)
+- `cacheSeconds` (optional): cache TTL in seconds (min 60, max 3600). Lower values refresh more often but increase GitHub API usage.
+
+### Authentication (recommended)
+
+To reduce GitHub rate limiting, configure a token in your deployment environment:
+
+- `GITHUB_TOKEN`: GitHub token used to query the GitHub API
+
+### Examples
+
+```text
+https://imrf.vercel.app/api/badge?metric=release_downloads_total&github=OWNER/REPO&label=Downloads&color=1f6feb&cacheSeconds=300
+https://imrf.vercel.app/api/badge?metric=release_downloads_latest&github=OWNER/REPO&label=Downloads&color=1f6feb&cacheSeconds=300
+```
 
 ## 🎯 What You Can Do With IMRF
 
