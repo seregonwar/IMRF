@@ -16,7 +16,7 @@
     "mdast-util-from-markdown": "^2.0.2",
     "mdast-util-to-string": "^4.0.0",
     "next": "16.0.10",
-    "next-mdx-remote": "^5.0.0",
+    "next-mdx-remote": "^6.0.0",
     "react": "19.2.1",
     "react-dom": "19.2.1",
     "remark": "^15.0.1",

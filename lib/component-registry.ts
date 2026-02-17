@@ -94,7 +94,12 @@ export class ComponentRegistry {
     const processedProps = this.processProps(component, props);
     
     try {
-      const element = createElement(component.component, processedProps);
+      const isClassComponent = Boolean(
+        (component.component as any)?.prototype?.isReactComponent
+      );
+      const element = isClassComponent
+        ? createElement(component.component, processedProps)
+        : (component.component as any)(processedProps);
       
       return {
         element,
